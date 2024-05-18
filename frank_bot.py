@@ -3,10 +3,11 @@
 from typing import Optional, Tuple
 
 import numpy as np
+from patterns import quad, glider, gun, replicator, p2
 
 from cholerama import Positions, helpers
 
-AUTHOR = "YeastieBoys"  # This is your team name
+AUTHOR = "ItsAlwaysSunny"  # This is your team name
 SEED = None  # Set this to a value to make runs reproducible
 
 
@@ -19,11 +20,11 @@ class Bot:
     """
 
     def __init__(
-        self,
-        number: int,
-        name: str,
-        patch_location: Tuple[int, int],
-        patch_size: Tuple[int, int],
+            self,
+            number: int,
+            name: str,
+            patch_location: Tuple[int, int],
+            patch_size: Tuple[int, int],
     ):
         """
         Parameters:
@@ -42,19 +43,40 @@ class Bot:
         self.color = None  # Optional
         self.patch_location = patch_location
         self.patch_size = patch_size
+        self.first_run = True
 
         self.rng = np.random.default_rng(SEED)
 
         # If we make the pattern too sparse, it just dies quickly
-        xy = self.rng.integers(0, 12, size=(2, 100))
+        xy = self.rng.integers(0, 50, size=(2,))
+        #self.pattern = Positions(
+        #    x=xy[1] + patch_size[1] // 2, y=xy[0] + patch_size[0] // 2
+        #)
+
+        x, y = np.where(p2 == 1)
+        x1, y1 = np.where(np.rot90(p2) == 1)
+        x2, y2 = np.where(np.rot90(np.rot90(p2)) == 1)
+        # x3, y3 = np.where(np.rot90(np.rot90(np.rot90(p2))) == 1)
+
         self.pattern = Positions(
-            x=xy[1] + patch_size[1] // 2, y=xy[0] + patch_size[0] // 2
+            x=np.concatenate([
+                xy[1] + y,
+                -1*(xy[1] + y1) + patch_size[1],
+                xy[1] + y2,
+                #-1*(xy[1] + y3) + patch_size[1]
+            ]),
+            y=np.concatenate([
+                xy[0] + x,
+                -1*(xy[0] + x1) + patch_size[0],
+                -1*(xy[0] + x2) + patch_size[0],
+                #xy[0] + x3
+            ])
         )
         # The pattern can also be just an image (0=white, 1=black)
         # self.pattern = "mypattern.png"
 
     def iterate(
-        self, iteration: int, board: np.ndarray, patch: np.ndarray, tokens: int
+            self, iteration: int, board: np.ndarray, patch: np.ndarray, tokens: int
     ) -> Optional[Positions]:
         """
         This method will be called by the game engine on each iteration.
@@ -74,14 +96,54 @@ class Bot:
         -------
         An object containing the x and y coordinates of the new cells.
         """
-        if tokens >= 5:
+        # if iteration > 600 & iteration < 600 + np.sum(gun):
+        #     return self.create_gun(tokens, patch)
+
+        pattern = None
+        if self.first_run:
+            if tokens < np.sum(gun):
+                return pattern
+            else:
+                self.first_run = False
+
+        if tokens >= np.sum(gun):
+            pattern = self.create_gun(tokens, patch)
+            if pattern is None:
+                pattern = self.create_glider(tokens, patch)
+        else:
+            if tokens >= np.sum(glider['NE']):
+                pattern = self.create_glider(tokens, patch)
+        return pattern
+
+    def create_glider(self, tokens, patch):
+        direction = list(glider.keys())
+        selected_glider = glider[direction[self.rng.integers(0, len(direction))]]
+        if tokens >= np.sum(selected_glider):
             # Pick a random empty region of size 3x3 inside my patch
-            empty_regions = helpers.find_empty_regions(patch, (3, 3))
+            empty_regions = helpers.find_empty_regions(patch, (5, 5))
             nregions = len(empty_regions)
             if nregions == 0:
                 return None
-            # Make a glider
-            ind = self.rng.integers(0, nregions)
-            x = np.array([1, 2, 0, 1, 2]) + empty_regions[ind, 1]
-            y = np.array([2, 1, 0, 0, 0]) + empty_regions[ind, 0]
-            return Positions(x=x, y=y)
+        ind = self.rng.integers(0, nregions)
+        x, y = np.where(selected_glider == 1)
+        pattern = Positions(x=empty_regions[ind, 1] + x, y=empty_regions[ind, 0] + y)
+        return pattern
+
+    def create_gun(self, tokens, patch):
+        this_gun = gun.copy()
+        if tokens >= np.sum(gun):
+            # Pick a random empty region of size 3x3 inside my patch
+            empty_regions = helpers.find_empty_regions(patch, (3, 49))
+            nregions = len(empty_regions)
+            if nregions == 0:
+                this_gun = np.transpose(this_gun)
+                empty_regions = helpers.find_empty_regions(patch, (49, 3))
+                nregions = len(empty_regions)
+                if nregions == 0:
+                    return None
+        else:
+            return None
+        ind = self.rng.integers(0, nregions)
+        x, y = np.where(this_gun == 1)
+        pattern = Positions(x=empty_regions[ind, 1] + x, y=empty_regions[ind, 0] + y)
+        return pattern
